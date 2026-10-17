@@ -32,7 +32,7 @@ end
 
 -- ============================================================ setup
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 local ROLE_FILE = "/swivel_role"
 local PROTOCOL = "swivelseat-" .. SEAT
 local SEND_EVERY = 0.1
@@ -112,7 +112,7 @@ local function seatMain()
   local typewriter = peripheral.find("linked_typewriter")
   local kbHeld = {}     -- this computer's own keyboard, as a backup
   local held = {}
-  local sentHome = 0
+  local twError = nil
   local hears = {}      -- "yaw"/"pitch" -> {angle, at}
 
   local function code(name) return keys[name] end
@@ -123,6 +123,9 @@ local function seatMain()
       local ok, codes = pcall(typewriter.getPressedKeyCodes)
       if ok and type(codes) == "table" then
         for _, c in ipairs(codes) do h[c] = true end
+        twError = nil
+      elseif not ok then
+        twError = tostring(codes)
       end
     end
     for c in pairs(kbHeld) do h[c] = true end
@@ -133,6 +136,14 @@ local function seatMain()
     local p, m = held[code(plus)], held[code(minus)]
     if p and not m then return 1 elseif m and not p then return -1 end
     return 0
+  end
+
+  local function heldText()
+    local names = {}
+    for c in pairs(held) do names[#names + 1] = (keys.getName and keys.getName(c) or "?") .. "(" .. c .. ")" end
+    table.sort(names)
+    if #names == 0 then return "none" end
+    return table.concat(names, " ")
   end
 
   local function draw()
@@ -146,7 +157,8 @@ local function seatMain()
     screen({
       "",
       "Typewriter: " .. (typewriter and "found" or "MISSING (wired modem or touching)"),
-      "",
+      twError and ("Typewriter error: " .. twError) or "",
+      "Keys held: " .. heldText(),
       "Yaw:   " .. arrow(yaw, "LEFT", "RIGHT") .. "   at " .. seen("yaw"),
       "Pitch: " .. arrow(pitch, "DOWN", "UP") .. "   at " .. seen("pitch"),
       "",
@@ -208,6 +220,8 @@ local function axisMain()
   local angle = tonumber(readFile(STATE_FILE) or "") or 0
   local want, lastHeard, home = 0, 0, false
   local gear = nil
+  local msgCount, test = 0, 0
+  local gearState = "idle"
 
   local function save() writeFile(STATE_FILE, tostring(angle)) end
 
@@ -226,14 +240,29 @@ local function axisMain()
     local dir = deg > 0 and 1 or -1
     if invert then dir = -dir end
     local ok, err = pcall(gear.rotate, math.floor(math.abs(deg) + 0.5), dir * SPEED)
-    if not ok then status = "Gearshift error: " .. tostring(err) return end
+    if not ok then
+      status = "Gearshift error: " .. tostring(err)
+      gear = nil
+      sleep(1)
+      return
+    end
     angle = angle + deg
     save()
     moving = true
     -- isRunning can lag a tick behind the command
     local t = now()
+    gearState = "turning"
     while not running() and now() - t < 0.15 do sleep(0.05) end
-    while running() do sleep(0.05) end
+    while running() do
+      -- a gearshift with no input rotation never finishes
+      if now() - t > 5 then
+        gearState = "STUCK: is its input shaft turning?"
+        moving = false
+        return
+      end
+      sleep(0.05)
+    end
+    gearState = "idle"
     moving = false
   end
 
@@ -242,23 +271,35 @@ local function axisMain()
     local dirText = want == 0 and "stopped" or (want > 0 and "+" or "-")
     if home then dirText = "going to center" end
     local link = (now() - lastHeard < TIMEOUT) and "OK" or "no signal"
-    screen({
+    local lines = {
       "",
-      "Gearshift: " .. (gear and "found" or "MISSING (Sequenced Gearshift)"),
-      "Seat link: " .. link,
+      "Gearshift: " .. (gear and gearState or "MISSING (Sequenced Gearshift)"),
+      "Seat link: " .. link .. "  (" .. msgCount .. " msgs)",
       "",
       string.format("Angle:  %.0f deg   (%s)", angle, dirText),
       "Limits: " .. lim,
       "",
-      "Z = set here as center (angle 0)",
-    })
+      "T = test turn (no seat needed)",
+      "Z = set center   H = go to center",
+    }
+    if not gear then
+      local seen = {}
+      for _, n in ipairs(peripheral.getNames()) do seen[#seen + 1] = n .. "=" .. tostring(peripheral.getType(n)) end
+      lines[#lines + 1] = "Peripherals: " .. (#seen > 0 and table.concat(seen, ", ") or "none")
+    end
+    screen(lines)
   end
 
   local function controlLoop()
     while true do
       if not gear then findGear() end
       if gear then
-        if home then
+        if test ~= 0 then
+          local d = test
+          test = 0
+          status = "Test: turning " .. d .. " deg"
+          turn(d)
+        elseif home then
           turn(-angle)
           home = false
         elseif want ~= 0 and now() - lastHeard < TIMEOUT then
@@ -283,6 +324,7 @@ local function axisMain()
           local v = role == "yaw" and msg.yaw or msg.pitch
           if v == 1 or v == -1 or v == 0 then want = v end
           lastHeard = now()
+          msgCount = msgCount + 1
         elseif msg.t == "home" then
           home = true
         elseif msg.t == "zero" then
@@ -311,6 +353,8 @@ local function axisMain()
         status = "Center set"
       elseif k == keys.h then
         home = true
+      elseif k == keys.t then
+        test = math.max(STEP, 45)
       end
     end
   end
