@@ -21,7 +21,8 @@ First boot asks what the computer is: **S**eat, **Y**aw or **P**itch. To change 
 
 ## Use
 
-- Hold **W A S D** on the typewriter. The gearshift turns `STEP` degrees at a time while the key is held.
+- Hold **W A S D** on the typewriter. The gearshift turns smoothly while the key is held and stops when you let go (or at a limit).
+- On a yaw/pitch computer, **T** turns 45° as a test, no seat needed.
 - On the seat computer's keyboard: **H** = back to center, **Z** = make the current position the center.
 - On a yaw/pitch computer: **Z** = set center, **H** = go to center.
 
@@ -33,8 +34,7 @@ Point the seat straight ahead before the first run (or press **Z** once it is), 
 |---|---|---|
 | `SEAT` | `"seat1"` | same on all 3; use another name for a second seat |
 | `KEYS` | w/s/a/d | typewriter keys (they must be bound to a frequency on the typewriter) |
-| `STEP` | 5 | degrees per gearshift step |
-| `SPEED` | 1 | 1 = gearshift input speed, 2 = double |
+| `SPEED` | 1 | 1 = gearshift input speed, 2 = double. For a slower seat, lower the RPM going into the gearshift |
 | `INVERT_YAW` / `INVERT_PITCH` | false | flip if a key turns the wrong way |
 | `YAW_MIN` / `YAW_MAX` | nil | yaw limits (nil = spin freely) |
 | `PITCH_MIN` / `PITCH_MAX` | -60 / 60 | pitch limits |
@@ -44,6 +44,6 @@ Angles are gearshift shaft degrees. If you gear the bearing up or down, the limi
 
 ## Safety
 
-If the seat computer goes quiet (unloaded, broken, rebooting), yaw and pitch stop after `TIMEOUT`. The angle is saved after every step, so limits survive reboots.
+If the seat computer goes quiet (unloaded, broken, rebooting), yaw and pitch stop after `TIMEOUT`. The angle is worked out from the gearshift's input speed and saved after every move, so limits survive reboots. If it ever drifts, point the seat straight and press **Z**.
 
 Updates install by themselves (every 15 min and on reboot), keeping your settings. `AUTO_UPDATE = false` turns that off.
